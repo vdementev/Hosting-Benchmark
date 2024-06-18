@@ -1,0 +1,65 @@
+services:
+  nginx:
+    image: nginx:alpine-slim
+    ports:
+      - 80:80
+    volumes:
+      - ./configs/nginx.conf:/etc/nginx/nginx.conf
+      - .:/app
+    depends_on:
+      - php
+
+  php:
+    image: dementev/php-fpm-with-ext:8.3
+    volumes:
+      - .:/app
+
+  mysql80:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: mydb
+      MYSQL_USER: user
+      MYSQL_PASSWORD: password
+    volumes:
+      - mysql80_data:/var/lib/mysql
+
+  # mysql84:
+  #   image: mysql:8.4
+  #   environment:
+  #     MYSQL_ROOT_PASSWORD: rootpassword
+  #     MYSQL_DATABASE: mydb
+  #     MYSQL_USER: user
+  #     MYSQL_PASSWORD: password
+  #   volumes:
+  #     - mysql84_data:/var/lib/mysql
+
+  # percona:
+  #   image: percona:8.0
+  #   environment:
+  #     MYSQL_ROOT_PASSWORD: rootpassword
+  #     MYSQL_DATABASE: mydb
+  #     MYSQL_USER: user
+  #     MYSQL_PASSWORD: password
+  #   volumes:
+  #     - percona80_data:/var/lib/mysql
+
+  # postgres:
+  #   image: postgres:latest
+  #   environment:
+  #     POSTGRES_DB: mydb
+  #     POSTGRES_USER: user
+  #     POSTGRES_PASSWORD: password
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data
+
+  adminer:
+    image: adminer:latest
+    ports:
+      - 8080:8080
+
+volumes:
+  mysql80_data:
+  # mysql84_data:
+  # percona80_data:
+  # postgres_data:
