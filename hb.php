@@ -143,11 +143,10 @@ class LogicBenchmarkCases
   public static function test_IfElse($n)
   {
     for ($i = 0; $i < $n; $i++) {
-      if ($i == -1) continue;
-      if ($i == -2) continue;
-      if ($i == -3) continue;
+      if ($i == -1 || $i == -2 || $i == -3) continue;
     }
   }
+
 
   public static function test_Sort($n)
   {
@@ -187,10 +186,13 @@ class RWBenchmarkCases
     }
 
     try {
+      $handle = fopen($filename, 'w+');
       for ($i = 0; $i < $count; $i++) {
-        file_put_contents($filename, str_repeat('a', 1000));
-        file_get_contents($filename);
+        fwrite($handle, str_repeat('a', 1000));
+        rewind($handle);
+        fread($handle, 1000);
       }
+      fclose($handle);
     } catch (Exception $e) {
     } finally {
       if (file_exists($filename)) {
@@ -205,10 +207,10 @@ class DbBenchmarkCases
   private static function createTable($pdo)
   {
     $pdo->exec("CREATE TABLE IF NOT EXISTS benchmark_temp (
-            id SERIAL PRIMARY KEY,
-            name VARCHAR(50),
-            val INT
-        )");
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(50),
+                val INT
+            )");
   }
 
   private static function dropTable($pdo)
@@ -226,8 +228,9 @@ class DbBenchmarkCases
     self::createTable($pdo);
 
     $t = Timer::make()->start();
+    $stmt = $pdo->prepare("INSERT INTO benchmark_temp (name, val) VALUES (:name, :val)");
     for ($i = 0; $i < $n; $i++) {
-      $pdo->exec("INSERT INTO benchmark_temp (name, val) VALUES ('temp$i', $i)");
+      $stmt->execute([':name' => "temp$i", ':val' => $i]);
     }
     return array(
       array('name' => 'Insert', 'exec_time' => $t->stop())
@@ -237,8 +240,9 @@ class DbBenchmarkCases
   public static function test_Select($pdo, $n)
   {
     $t = Timer::make()->start();
+    $stmt = $pdo->prepare("SELECT * FROM benchmark_temp WHERE name = :name");
     for ($i = 0; $i < $n; $i++) {
-      $stmt = $pdo->query("SELECT * FROM benchmark_temp WHERE name = 'temp$i'");
+      $stmt->execute([':name' => "temp$i"]);
       $stmt->fetch();
     }
     return array(
@@ -249,8 +253,9 @@ class DbBenchmarkCases
   public static function test_Update($pdo, $n)
   {
     $t = Timer::make()->start();
+    $stmt = $pdo->prepare("UPDATE benchmark_temp SET val = :val WHERE name = :name");
     for ($i = 0; $i < $n; $i++) {
-      $pdo->exec("UPDATE benchmark_temp SET val = $i + 1 WHERE name = 'temp$i'");
+      $stmt->execute([':val' => $i + 1, ':name' => "temp$i"]);
     }
     return array(
       array('name' => 'Update', 'exec_time' => $t->stop())
@@ -260,8 +265,9 @@ class DbBenchmarkCases
   public static function test_Delete($pdo, $n)
   {
     $t = Timer::make()->start();
+    $stmt = $pdo->prepare("DELETE FROM benchmark_temp WHERE name = :name");
     for ($i = 0; $i < $n; $i++) {
-      $pdo->exec("DELETE FROM benchmark_temp WHERE name = 'test$i'");
+      $stmt->execute([':name' => "test$i"]);
     }
     $res = array(
       array('name' => 'Delete', 'exec_time' => $t->stop())
@@ -279,8 +285,9 @@ class DbBenchmarkCases
     $t = Timer::make()->start();
     try {
       $pdo->beginTransaction();
+      $stmt = $pdo->prepare("INSERT INTO benchmark_temp (name, val) VALUES (:name, :val)");
       for ($i = 0; $i < $n; $i++) {
-        $pdo->exec("INSERT INTO benchmark_temp (name, val) VALUES ('trans_test$i', $i)");
+        $stmt->execute([':name' => "trans_test$i", ':val' => $i]);
       }
       $pdo->commit();
       $res = array(
@@ -303,12 +310,14 @@ class DbBenchmarkCases
     self::createTable($pdo);
 
     $t = Timer::make()->start();
+    $stmt = $pdo->prepare("INSERT INTO benchmark_temp (name, val) VALUES (:name, :val)");
     for ($i = 0; $i < $n; $i++) {
-      $pdo->exec("INSERT INTO benchmark_temp (name, val) VALUES ('index_test$i', $i)");
+      $stmt->execute([':name' => "index_test$i", ':val' => $i]);
     }
 
+    $stmt = $pdo->prepare("SELECT * FROM benchmark_temp WHERE val = :val");
     for ($i = 0; $i < $n; $i++) {
-      $stmt = $pdo->query("SELECT * FROM benchmark_temp WHERE val = $i");
+      $stmt->execute([':val' => $i]);
       $stmt->fetch();
     }
     $res = array(
@@ -325,17 +334,19 @@ class DbBenchmarkCases
     self::createTable($pdo);
 
     $t = Timer::make()->start();
+    $stmt = $pdo->prepare("INSERT INTO benchmark_temp (name, val) VALUES (:name, :val)");
     for ($i = 0; $i < $n; $i++) {
-      $pdo->exec("INSERT INTO benchmark_temp (name, val) VALUES ('index_test$i', $i)");
+      $stmt->execute([':name' => "index_test$i", ':val' => $i]);
     }
 
     $pdo->exec("CREATE INDEX value_index ON benchmark_temp (val)");
+    $stmt = $pdo->prepare("SELECT * FROM benchmark_temp WHERE val = :val");
     for ($i = 0; $i < $n; $i++) {
-      $stmt = $pdo->query("SELECT * FROM benchmark_temp WHERE val = $i");
+      $stmt->execute([':val' => $i]);
       $stmt->fetch();
     }
     $res = array(
-      array('name' => 'IndexingA', 'exec_time' => $t->stop())
+      array('name' => 'IndexingB', 'exec_time' => $t->stop())
     );
 
     self::dropTable($pdo);
@@ -351,9 +362,11 @@ class DbBenchmarkCases
     $pdo->exec("CREATE TABLE IF NOT EXISTS benchmark_tempA (id SERIAL PRIMARY KEY, val INT)");
     $pdo->exec("CREATE TABLE IF NOT EXISTS benchmark_tempB (id SERIAL PRIMARY KEY, benchmark_tempA_id INT, val INT)");
 
+    $stmtA = $pdo->prepare("INSERT INTO benchmark_tempA (val) VALUES (:val)");
+    $stmtB = $pdo->prepare("INSERT INTO benchmark_tempB (benchmark_tempA_id, val) VALUES (:id, :val)");
     for ($i = 0; $i < $n; $i++) {
-      $pdo->exec("INSERT INTO benchmark_tempA (val) VALUES ($i)");
-      $pdo->exec("INSERT INTO benchmark_tempB (benchmark_tempA_id, val) VALUES ($i, $i * 1000)");
+      $stmtA->execute([':val' => $i]);
+      $stmtB->execute([':id' => $i, ':val' => $i * 1000]);
     }
 
     $t->start();
@@ -377,6 +390,7 @@ class DbBenchmarkCases
     return $res;
   }
 }
+
 
 /**
  * Application
@@ -527,6 +541,14 @@ class App
 
   private function getServerInfo()
   {
+
+    function formatMemorySize($bytes)
+    {
+      $units = array('B', 'KB', 'MB', 'GB', 'TB');
+      $power = $bytes > 0 ? floor(log($bytes, 1024)) : 0;
+      return number_format($bytes / pow(1024, $power), 2) . ' ' . $units[$power];
+    }
+
     $serverInfo = array();
 
     $serverInfo['server_name'] = isset($_SERVER['SERVER_NAME']) ? $_SERVER['SERVER_NAME'] : 'N/A';
@@ -537,16 +559,24 @@ class App
 
     $serverInfo['php_version'] = phpversion();
     $serverInfo['max_execution_time'] = ini_get('max_execution_time');
+    $serverInfo['memory_limit'] = ini_get('memory_limit');
     $serverInfo['upload_max_filesize'] = ini_get('upload_max_filesize');
 
     $serverInfo['os'] = php_uname();
 
     if (function_exists('sys_getloadavg')) {
-      $serverInfo['load_average'] = sys_getloadavg();
+      function formatLoadAverage($load)
+      {
+        return number_format($load, 2);
+      }
+
+      $serverInfo['load_average'] = array_map('formatLoadAverage', sys_getloadavg());
     }
 
-    $serverInfo['memory_usage'] = memory_get_usage();
-    $serverInfo['memory_peak_usage'] = memory_get_peak_usage();
+    // $serverInfo['memory_usage'] = memory_get_usage();
+    $serverInfo['memory_usage'] = formatMemorySize(memory_get_usage());
+    // $serverInfo['memory_peak_usage'] = memory_get_peak_usage();
+    $serverInfo['memory_peak_usage'] = formatMemorySize(memory_get_peak_usage());
 
     return $serverInfo;
   }
@@ -759,10 +789,9 @@ $app->run();
 
   <div class="benchflow" id="benchflow">
     <h2>Benchmark flow:</h2>
-    <p>Please select Test Cases and click "Start" button. You can test your database connection by "Test Connection"
-      button. Enjoy it.</p>
+    <p>Select Test Cases and click "Run tests" button.</p>
     <div>
-      <button id="start">Start</button>
+      <button id="start">Run tests</button>
     </div>
   </div>
 
@@ -1077,7 +1106,7 @@ $app->run();
           await executeCasesSequentially('db', casesDB);
         }
 
-        $btnStart.html('Start')
+        $btnStart.html('Run again')
         $('button').removeAttr('disabled')
         $('input').removeAttr('disabled')
       });
